@@ -20,22 +20,9 @@ import java.util.zip.ZipOutputStream;
 public class DefaultDarkModePatcher implements ClientModInitializer {
 
     public static final String MOD_ID = "default_dark_mode_patcher";
-    public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.20.2+-2024.6.0.zip";
+    public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.21.4+-2025.5.0.zip";
+    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-1.21.6+-2025.5.0-unofficial.zip";
     private static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-
-    private static final String UPDATED_PACK_MCMETA = """
-        {
-            "pack": {
-                "pack_format": 18,
-                "supported_formats": {
-                    "min_inclusive": 18,
-                    "max_inclusive": 61
-                },
-                "description": "Welcome to the dark side!\\n\\u00a78by nebulr \\u2022 1.20.2+ \\u2022 2024.6.0"
-            }
-        }
-        """;
-
     private static final String UPDATED_RENDTYPE_TEXT_FSH = """
         #version 150
 
@@ -110,7 +97,6 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        // Schedule our check once the client is fully loaded
         MinecraftClient client = MinecraftClient.getInstance();
         client.execute(() -> {
             Path gameDir = client.runDirectory.toPath();
@@ -118,10 +104,8 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             Path defaultPackPath = resourcePacksDir.resolve(DEFAULT_PACK_FILENAME);
             if (Files.exists(defaultPackPath)) {
                 LOGGER.info("Found Default Dark Mode resource pack at: {}", defaultPackPath);
-                // Run the patch process in a separate thread to avoid freezing the main thread
                 new Thread(() -> {
                     patchResourcePack(defaultPackPath);
-                    // Notify the user on the main thread when done
                     client.execute(() -> {
                         if (client.player != null) {
                             client.player.sendMessage(Text.literal("Default Dark Mode has been patched automatically."), false);
@@ -140,37 +124,27 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             Path tempDir = Files.createTempDirectory("ddm_patch_");
             LOGGER.info("Created temporary directory: {}", tempDir);
             
-            // Unzip the resource pack
             unzip(packPath.toFile(), tempDir.toFile());
             LOGGER.info("Extracted resource pack to temporary directory.");
-
-            // Update pack.mcmeta with the new values
-            Path packMcmeta = tempDir.resolve("pack.mcmeta");
-            Files.writeString(packMcmeta, UPDATED_PACK_MCMETA, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
-            LOGGER.info("Updated pack.mcmeta.");
-
-            // Update shader files
+                        
             Path shaderDir = tempDir.resolve("assets/minecraft/shaders/core");
             Files.writeString(shaderDir.resolve("rendertype_text.fsh"), UPDATED_RENDTYPE_TEXT_FSH, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
             Files.writeString(shaderDir.resolve("rendertype_text_intensity.fsh"), UPDATED_RENDTYPE_TEXT_INTENSITY_FSH, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
             LOGGER.info("Updated shader files.");
-
-            // Repackage the patched resource pack
-            File patchedZip = new File(packPath.toString() + ".patched.zip");
+            
+            Path patchedPackPath = packPath.getParent().resolve(PATCHED_PACK_FILENAME);
+            File patchedZip = patchedPackPath.toFile();
             zipDirectory(tempDir.toFile(), patchedZip);
-            LOGGER.info("Repackaged patched resource pack.");
-
-            // Replace the original resource pack with the patched version
-            Files.delete(packPath);
-            Files.move(patchedZip.toPath(), packPath);
-            LOGGER.info("Replaced original resource pack with patched version.");
-
-            // Clean up temporary files
+            LOGGER.info("Repackaged patched resource pack as: {}", patchedPackPath);
+            
+            // Optionally, you could remove the original zip if desired. - Aric3435
+            // Files.delete(packPath);
+            // LOGGER.info("Deleted original resource pack.");
+            
             deleteDirectoryRecursively(tempDir.toFile());
             LOGGER.info("Cleaned up temporary files.");
         } catch (Exception e) {
             LOGGER.error("Error during patching: ", e);
-            // Optionally, you can notify the user of the failure here as well
         }
     }
 
