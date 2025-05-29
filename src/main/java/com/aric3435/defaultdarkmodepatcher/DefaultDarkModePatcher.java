@@ -20,9 +20,23 @@ import java.util.zip.ZipOutputStream;
 public class DefaultDarkModePatcher implements ClientModInitializer {
 
     public static final String MOD_ID = "default_dark_mode_patcher";
-    public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.21.4+-2025.5.0.zip";
-    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-1.21.6+-2025.5.0-unofficial.zip";
+    public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.21.4+-2025.5.1.zip";
+    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-1.21.6+-2025.5.1-unofficial.zip";
     private static final Logger LOGGER = LogManager.getLogger(MOD_ID);
+
+    private static final String UPDATED_PACK_MCMETA = """
+        {
+            "pack": {
+                "pack_format": 56,
+                "supported_formats": {
+                    "min_inclusive": 56,
+                    "max_inclusive": 63
+                },
+                "description": "Welcome to the dark side!\\n\\u00a78by nebulr \\u2022 1.21.6+ \\u2022 2025.5.1"
+            }
+        }
+        """;
+
     private static final String UPDATED_RENDTYPE_TEXT_FSH = """
         #version 150
 
@@ -126,7 +140,11 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             
             unzip(packPath.toFile(), tempDir.toFile());
             LOGGER.info("Extracted resource pack to temporary directory.");
-                        
+            
+            Path packMcmeta = tempDir.resolve("pack.mcmeta");
+            Files.writeString(packMcmeta, UPDATED_PACK_MCMETA, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
+            LOGGER.info("Updated pack.mcmeta with pack_format 63.");
+
             Path shaderDir = tempDir.resolve("assets/minecraft/shaders/core");
             Files.writeString(shaderDir.resolve("rendertype_text.fsh"), UPDATED_RENDTYPE_TEXT_FSH, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
             Files.writeString(shaderDir.resolve("rendertype_text_intensity.fsh"), UPDATED_RENDTYPE_TEXT_INTENSITY_FSH, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
@@ -136,11 +154,7 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             File patchedZip = patchedPackPath.toFile();
             zipDirectory(tempDir.toFile(), patchedZip);
             LOGGER.info("Repackaged patched resource pack as: {}", patchedPackPath);
-            
-            // Optionally, you could remove the original zip if desired. - Aric3435
-            // Files.delete(packPath);
-            // LOGGER.info("Deleted original resource pack.");
-            
+                        
             deleteDirectoryRecursively(tempDir.toFile());
             LOGGER.info("Cleaned up temporary files.");
         } catch (Exception e) {
