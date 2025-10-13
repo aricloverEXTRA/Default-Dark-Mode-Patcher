@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -20,92 +21,24 @@ import java.util.zip.ZipOutputStream;
 public class DefaultDarkModePatcher implements ClientModInitializer {
 
     public static final String MOD_ID = "default_dark_mode_patcher";
-    public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.21.4+-2025.5.1.zip";
-    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-1.21.6+-2025.5.1-unofficial.zip";
+
+    // Updated filenames for the new NebuIr pack and patched output
+    public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.21.6-2025.6.0.zip";
+    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-25w41a-2025.10.0.zip";
+
     private static final Logger LOGGER = LogManager.getLogger(MOD_ID);
 
+    // Updated pack.mcmeta for 25w41a (1.21.11 unofficial)
     private static final String UPDATED_PACK_MCMETA = """
         {
             "pack": {
-                "pack_format": 56,
+                "pack_format": 63,
                 "supported_formats": {
-                    "min_inclusive": 56,
-                    "max_inclusive": 63
+                    "min_inclusive": 63,
+                    "max_inclusive": 70
                 },
-                "description": "Welcome to the dark side!\\n\\u00a78by nebulr \\u2022 1.21.6+ \\u2022 2025.5.1"
+                "description": "Welcome to the dark side!\\n\\u00a78by nebulr \\u2022 1.21.11 \\u2022 2025.10.0"
             }
-        }
-        """;
-
-    private static final String UPDATED_RENDTYPE_TEXT_FSH = """
-        #version 150
-
-        #moj_import <fog.glsl>
-        #moj_import <minecraft:dynamictransforms.glsl>
-
-        uniform sampler2D Sampler0;
-
-        in float vertexDistance;
-        in vec4 vertexColor;
-        in vec2 texCoord0;
-
-        out vec4 fragColor;
-
-        void main() {
-            vec4 color = texture(Sampler0, texCoord0) * vertexColor * ColorModulator;
-            if (color.a < 0.1) {
-                discard;
-            }
-            
-            if (color.r > 0.2479 && color.r < 0.2481
-                && color.g > 0.2479 && color.g < 0.2481
-                && color.b > 0.2479 && color.b < 0.2481) {
-                color = vec4(0.6667, 0.6667, 0.6667, 1.0);
-            }
-            
-            vec3 pos = vec3(0.0, 0.0, vertexDistance);
-            float sphericalDist = fog_spherical_distance(pos);
-            float cylindricalDist = fog_cylindrical_distance(pos);
-            
-            fragColor = apply_fog(color, sphericalDist, cylindricalDist, 
-                                FogEnvironmentalStart, FogEnvironmentalEnd,
-                                FogRenderDistanceStart, FogRenderDistanceEnd, FogColor);
-        }
-        """;
-
-    private static final String UPDATED_RENDTYPE_TEXT_INTENSITY_FSH = """
-        #version 150
-
-        #moj_import <fog.glsl>
-        #moj_import <minecraft:dynamictransforms.glsl>
-
-        uniform sampler2D Sampler0;
-
-        in float vertexDistance;
-        in vec4 vertexColor;
-        in vec2 texCoord0;
-
-        out vec4 fragColor;
-
-        void main() {
-            vec4 color = texture(Sampler0, texCoord0).rrrr * vertexColor * ColorModulator;
-            if (color.a < 0.1) {
-                discard;
-            }
-            
-            if (color.r > 0.2479 && color.r < 0.2481
-                && color.g > 0.2479 && color.g < 0.2481
-                && color.b > 0.2479 && color.b < 0.2481) {
-                color = vec4(0.6667, 0.6667, 0.6667, 1.0);
-            }
-            
-            vec3 pos = vec3(0.0, 0.0, vertexDistance);
-            float sphericalDist = fog_spherical_distance(pos);
-            float cylindricalDist = fog_cylindrical_distance(pos);
-            
-            fragColor = apply_fog(color, sphericalDist, cylindricalDist, 
-                                FogEnvironmentalStart, FogEnvironmentalEnd,
-                                FogRenderDistanceStart, FogRenderDistanceEnd, FogColor);
         }
         """;
 
@@ -122,7 +55,7 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
                     patchResourcePack(defaultPackPath);
                     client.execute(() -> {
                         if (client.player != null) {
-                            client.player.sendMessage(Text.literal("Default Dark Mode has been patched automatically."), false);
+                            client.player.sendMessage(Text.literal("Default Dark Mode has been patched to 25w41a (1.21.11)."), false);
                         }
                     });
                 }).start();
@@ -137,28 +70,53 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
         try {
             Path tempDir = Files.createTempDirectory("ddm_patch_");
             LOGGER.info("Created temporary directory: {}", tempDir);
-            
+
             unzip(packPath.toFile(), tempDir.toFile());
             LOGGER.info("Extracted resource pack to temporary directory.");
-            
-            Path packMcmeta = tempDir.resolve("pack.mcmeta");
-            Files.writeString(packMcmeta, UPDATED_PACK_MCMETA, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
-            LOGGER.info("Updated pack.mcmeta with pack_format 63.");
 
-            Path shaderDir = tempDir.resolve("assets/minecraft/shaders/core");
-            Files.writeString(shaderDir.resolve("rendertype_text.fsh"), UPDATED_RENDTYPE_TEXT_FSH, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
-            Files.writeString(shaderDir.resolve("rendertype_text_intensity.fsh"), UPDATED_RENDTYPE_TEXT_INTENSITY_FSH, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
-            LOGGER.info("Updated shader files.");
-            
+            // Update pack.mcmeta
+            Path packMcmeta = tempDir.resolve("pack.mcmeta");
+            Files.writeString(packMcmeta, UPDATED_PACK_MCMETA,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
+            LOGGER.info("Updated pack.mcmeta with pack_format 63 and max_inclusive 70.");
+
+            // Inject new slot textures
+            injectSlotTexture(tempDir, "nautilus_armor.png");
+            injectSlotTexture(tempDir, "spear.png");
+
+            // Repackage
             Path patchedPackPath = packPath.getParent().resolve(PATCHED_PACK_FILENAME);
             File patchedZip = patchedPackPath.toFile();
             zipDirectory(tempDir.toFile(), patchedZip);
             LOGGER.info("Repackaged patched resource pack as: {}", patchedPackPath);
-                        
+
+            // Delete the original pack after patching
+            try {
+                Files.deleteIfExists(packPath);
+                LOGGER.info("Deleted original resource pack: {}", packPath);
+            } catch (IOException e) {
+                LOGGER.warn("Failed to delete original resource pack: {}", packPath, e);
+            }
+
             deleteDirectoryRecursively(tempDir.toFile());
             LOGGER.info("Cleaned up temporary files.");
         } catch (Exception e) {
             LOGGER.error("Error during patching: ", e);
+        }
+    }
+
+    private void injectSlotTexture(Path tempDir, String fileName) throws IOException {
+        Path targetDir = tempDir.resolve("assets/minecraft/textures/gui/sprites/container/slot");
+        Files.createDirectories(targetDir);
+
+        try (InputStream in = DefaultDarkModePatcher.class.getResourceAsStream(
+                "/assets/defaultdarkmodepatcher/slot/" + fileName)) {
+            if (in == null) {
+                LOGGER.warn("Missing bundled texture: {}", fileName);
+                return;
+            }
+            Files.copy(in, targetDir.resolve(fileName), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            LOGGER.info("Injected slot texture: {}", fileName);
         }
     }
 
