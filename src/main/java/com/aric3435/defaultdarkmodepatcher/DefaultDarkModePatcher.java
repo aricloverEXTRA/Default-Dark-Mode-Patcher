@@ -6,36 +6,33 @@ import net.minecraft.text.Text;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
-import java.util.zip.ZipOutputStream;
+import java.io.*;
+import java.nio.file.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.zip.*;
 
 public class DefaultDarkModePatcher implements ClientModInitializer {
 
     public static final String MOD_ID = "default_dark_mode_patcher";
-
-    // Updated filenames for the new NebuIr pack and patched output
-    public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.21.6-2025.6.0.zip";
-    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-25w41a-2025.10.0.zip";
-
     private static final Logger LOGGER = LogManager.getLogger(MOD_ID);
 
-    // Updated pack.mcmeta for 25w41a (1.21.11 unofficial)
+    public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.21.6-2025.6.0.zip";
+    public static final String DEFAULT_PACK_BAK_FILENAME = "Default-Dark-Mode-1.21.6-2025.6.0.zip.bak";
+    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-25w42a-2025.10.0.zip";
+
+    private static final String EXPECTED_SHA256 =
+            "7DFF817B040D9942CBBE3228714075881736337E20713555ADCA62F546077741";
+
     private static final String UPDATED_PACK_MCMETA = """
         {
             "pack": {
-                "pack_format": 63,
+                "pack_format": {
+                    "resource": [70, 1]
+                },
                 "supported_formats": {
-                    "min_inclusive": 63,
-                    "max_inclusive": 70
+                    "min_inclusive": [63, 0],
+                    "max_inclusive": [70, 1]
                 },
                 "description": "Welcome to the dark side!\\n\\u00a78by nebulr \\u2022 1.21.11 \\u2022 2025.10.0"
             }
@@ -48,93 +45,138 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
         client.execute(() -> {
             Path gameDir = client.runDirectory.toPath();
             Path resourcePacksDir = gameDir.resolve("resourcepacks");
-            Path defaultPackPath = resourcePacksDir.resolve(DEFAULT_PACK_FILENAME);
-            if (Files.exists(defaultPackPath)) {
-                LOGGER.info("Found Default Dark Mode resource pack at: {}", defaultPackPath);
-                new Thread(() -> {
-                    patchResourcePack(defaultPackPath);
-                    client.execute(() -> {
-                        if (client.player != null) {
-                            client.player.sendMessage(Text.literal("Default Dark Mode has been patched to 25w41a (1.21.11)."), false);
-                        }
-                    });
-                }).start();
-            } else {
-                LOGGER.info("Default Dark Mode resource pack not found, skipping patch.");
+            Path zipPath = resourcePacksDir.resolve(DEFAULT_PACK_FILENAME);
+            Path bakPath = resourcePacksDir.resolve(DEFAULT_PACK_BAK_FILENAME);
+            Path patchedPath = resourcePacksDir.resolve(PATCHED_PACK_FILENAME);
+
+            if (!Files.exists(zipPath)) {
+                LOGGER.info("Default Dark Mode resource pack not found at {}. Skipping.", zipPath);
+                return;
             }
+
+            new Thread(() -> {
+                boolean patched = patchWithVerification(zipPath, bakPath, patchedPath);
+                client.execute(() -> {
+                    if (client.player != null) {
+                        if (patched) {
+                            client.player.sendMessage(Text.literal("Default Dark Mode patched to 25w42a (1.21.11)."), false);
+                        } else {
+                            client.player.sendMessage(Text.literal("Default Dark Mode patch skipped. See logs for details."), false);
+                        }
+                    }
+                });
+            }).start();
         });
     }
 
-    private void patchResourcePack(Path packPath) {
-        LOGGER.info("Starting patch process for resource pack: {}", packPath);
+    private boolean patchWithVerification(Path zipPath, Path bakPath, Path patchedPath) {
         try {
-            Path tempDir = Files.createTempDirectory("ddm_patch_");
-            LOGGER.info("Created temporary directory: {}", tempDir);
+            boolean zipIsOriginal = verifySha256(zipPath, EXPECTED_SHA256);
+            boolean bakExists = Files.exists(bakPath);
+            boolean bakIsOriginal = bakExists && verifySha256(bakPath, EXPECTED_SHA256);
 
-            unzip(packPath.toFile(), tempDir.toFile());
-            LOGGER.info("Extracted resource pack to temporary directory.");
+            if (zipIsOriginal) {
+                if (!bakExists) {
+                    Files.copy(zipPath, bakPath, StandardCopyOption.COPY_ATTRIBUTES);
+                    LOGGER.info("Created backup .bak: {}", bakPath);
+                }
+                boolean ok = patchFromSourceToZip(zipPath, patchedPath);
+                if (ok) Files.deleteIfExists(zipPath);
+                return ok;
+            }
 
-            // Update pack.mcmeta
+            if (bakIsOriginal) {
+                boolean ok = patchFromSourceToZip(bakPath, patchedPath);
+                if (ok && Files.exists(zipPath)) Files.deleteIfExists(zipPath);
+                return ok;
+            }
+
+            LOGGER.warn("Neither .zip nor .bak match expected SHA-256. Aborting patch.");
+            return false;
+
+        } catch (Exception e) {
+            LOGGER.error("Patch verification failed: ", e);
+            return false;
+        }
+    }
+
+    private boolean patchFromSourceToZip(Path sourceZip, Path targetZip) {
+        Path tempDir = null;
+        try {
+            tempDir = Files.createTempDirectory("ddm_patch_");
+            unzip(sourceZip.toFile(), tempDir.toFile());
+
             Path packMcmeta = tempDir.resolve("pack.mcmeta");
             Files.writeString(packMcmeta, UPDATED_PACK_MCMETA,
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
-            LOGGER.info("Updated pack.mcmeta with pack_format 63 and max_inclusive 70.");
 
-            // Inject new slot textures
             injectSlotTexture(tempDir, "nautilus_armor.png");
             injectSlotTexture(tempDir, "spear.png");
 
-            // Repackage
-            Path patchedPackPath = packPath.getParent().resolve(PATCHED_PACK_FILENAME);
-            File patchedZip = patchedPackPath.toFile();
-            zipDirectory(tempDir.toFile(), patchedZip);
-            LOGGER.info("Repackaged patched resource pack as: {}", patchedPackPath);
+            zipDirectory(tempDir.toFile(), targetZip.toFile());
+            LOGGER.info("Repackaged patched resource pack as: {}", targetZip);
 
-            // Delete the original pack after patching
-            try {
-                Files.deleteIfExists(packPath);
-                LOGGER.info("Deleted original resource pack: {}", packPath);
-            } catch (IOException e) {
-                LOGGER.warn("Failed to delete original resource pack: {}", packPath, e);
-            }
-
-            deleteDirectoryRecursively(tempDir.toFile());
-            LOGGER.info("Cleaned up temporary files.");
+            return true;
         } catch (Exception e) {
             LOGGER.error("Error during patching: ", e);
+            return false;
+        } finally {
+            if (tempDir != null) {
+                try {
+                    deleteDirectoryRecursively(tempDir.toFile());
+                } catch (IOException ignored) {}
+            }
         }
     }
 
     private void injectSlotTexture(Path tempDir, String fileName) throws IOException {
         Path targetDir = tempDir.resolve("assets/minecraft/textures/gui/sprites/container/slot");
         Files.createDirectories(targetDir);
-
         try (InputStream in = DefaultDarkModePatcher.class.getResourceAsStream(
                 "/assets/defaultdarkmodepatcher/slot/" + fileName)) {
-            if (in == null) {
+            if (in != null) {
+                Files.copy(in, targetDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
+                LOGGER.info("Injected slot texture: {}", fileName);
+            } else {
                 LOGGER.warn("Missing bundled texture: {}", fileName);
-                return;
             }
-            Files.copy(in, targetDir.resolve(fileName), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            LOGGER.info("Injected slot texture: {}", fileName);
         }
     }
 
+    private static boolean verifySha256(Path file, String expectedUpperHex) {
+        try {
+            String actual = computeSHA256(file);
+            return expectedUpperHex.equalsIgnoreCase(actual);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static String computeSHA256(Path file) throws IOException, NoSuchAlgorithmException {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (FileInputStream fis = new FileInputStream(file.toFile())) {
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                digest.update(buffer, 0, bytesRead);
+            }
+        }
+        byte[] hashBytes = digest.digest();
+        StringBuilder sb = new StringBuilder();
+        for (byte b : hashBytes) sb.append(String.format("%02X", b));
+        return sb.toString();
+    }
+
     private void unzip(File zipFile, File targetDir) throws IOException {
-        byte[] buffer = new byte[1024];
+        byte[] buffer = new byte[4096];
         try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 File newFile = newFile(targetDir, entry);
                 if (entry.isDirectory()) {
-                    if (!newFile.isDirectory() && !newFile.mkdirs()) {
-                        throw new IOException("Failed to create directory " + newFile);
-                    }
+                    newFile.mkdirs();
                 } else {
-                    File parent = newFile.getParentFile();
-                    if (!parent.isDirectory() && !parent.mkdirs()) {
-                        throw new IOException("Failed to create directory " + parent);
-                    }
+                    newFile.getParentFile().mkdirs();
                     try (FileOutputStream fos = new FileOutputStream(newFile)) {
                         int len;
                         while ((len = zis.read(buffer)) > 0) {
@@ -160,21 +202,24 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
     private void zipDirectory(File sourceDir, File zipFile) throws IOException {
         try (FileOutputStream fos = new FileOutputStream(zipFile);
              ZipOutputStream zos = new ZipOutputStream(fos)) {
-            zipFile(sourceDir, sourceDir, zos);
+            zipFileRecursive(sourceDir, sourceDir, zos);
         }
     }
 
-    private void zipFile(File rootDir, File sourceFile, ZipOutputStream zos) throws IOException {
+    private void zipFileRecursive(File rootDir, File sourceFile, ZipOutputStream zos) throws IOException {
         if (sourceFile.isDirectory()) {
-            for (File file : sourceFile.listFiles()) {
-                zipFile(rootDir, file, zos);
+            File[] children = sourceFile.listFiles();
+            if (children != null) {
+                for (File file : children) {
+                    zipFileRecursive(rootDir, file, zos);
+                }
             }
         } else {
             try (FileInputStream fis = new FileInputStream(sourceFile)) {
                 String zipEntryName = rootDir.toURI().relativize(sourceFile.toURI()).getPath();
                 ZipEntry zipEntry = new ZipEntry(zipEntryName);
                 zos.putNextEntry(zipEntry);
-                byte[] buffer = new byte[1024];
+                byte[] buffer = new byte[4096];
                 int len;
                 while ((len = fis.read(buffer)) > 0) {
                     zos.write(buffer, 0, len);
@@ -186,8 +231,11 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
 
     private void deleteDirectoryRecursively(File file) throws IOException {
         if (file.isDirectory()) {
-            for (File child : file.listFiles()) {
-                deleteDirectoryRecursively(child);
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteDirectoryRecursively(child);
+                }
             }
         }
         if (!file.delete()) {
