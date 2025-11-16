@@ -19,7 +19,7 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
 
     public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.21.6-2025.6.0.zip";
     public static final String DEFAULT_PACK_BAK_FILENAME = "Default-Dark-Mode-1.21.6-2025.6.0.zip.bak";
-    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-25w42a-2025.10.0.zip";
+    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-25w46a-2025.11.0.zip";
 
     private static final String EXPECTED_SHA256 =
             "7DFF817B040D9942CBBE3228714075881736337E20713555ADCA62F546077741";
@@ -27,14 +27,14 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
     private static final String UPDATED_PACK_MCMETA = """
         {
             "pack": {
-                "pack_format": {
-                    "resource": [70, 1]
-                },
+                "pack_format": 63,
                 "supported_formats": {
-                    "min_inclusive": [63, 0],
-                    "max_inclusive": [70, 1]
+                    "min_inclusive": 63,
+                    "max_inclusive": 74
                 },
-                "description": "Welcome to the dark side!\\n\\u00a78by nebulr \\u2022 1.21.11 \\u2022 2025.10.0"
+                "min_format": 63,
+                "max_format": 74,
+                "description": "Welcome to the dark side!\\n\\u00a78by nebulr \\u2022 1.21.11 \\u2022 2025.11.0"
             }
         }
         """;
@@ -59,7 +59,7 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
                 client.execute(() -> {
                     if (client.player != null) {
                         if (patched) {
-                            client.player.sendMessage(Text.literal("Default Dark Mode patched to 25w42a (1.21.11)."), false);
+                            client.player.sendMessage(Text.literal("Default Dark Mode patched to 25w46a (1.21.11)."), false);
                         } else {
                             client.player.sendMessage(Text.literal("Default Dark Mode patch skipped. See logs for details."), false);
                         }
@@ -112,6 +112,7 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
 
             injectSlotTexture(tempDir, "nautilus_armor.png");
             injectSlotTexture(tempDir, "spear.png");
+            injectGuiTexture(tempDir, "nautilus.png");
 
             zipDirectory(tempDir.toFile(), targetZip.toFile());
             LOGGER.info("Repackaged patched resource pack as: {}", targetZip);
@@ -139,6 +140,20 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
                 LOGGER.info("Injected slot texture: {}", fileName);
             } else {
                 LOGGER.warn("Missing bundled texture: {}", fileName);
+            }
+        }
+    }
+
+    private void injectGuiTexture(Path tempDir, String fileName) throws IOException {
+        Path targetDir = tempDir.resolve("assets/minecraft/textures/gui/container");
+        Files.createDirectories(targetDir);
+        try (InputStream in = DefaultDarkModePatcher.class.getResourceAsStream(
+                "/assets/defaultdarkmodepatcher/gui/container/" + fileName)) {
+            if (in != null) {
+                Files.copy(in, targetDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
+                LOGGER.info("Injected GUI texture: {}", fileName);
+            } else {
+                LOGGER.warn("Missing bundled GUI texture: {}", fileName);
             }
         }
     }
