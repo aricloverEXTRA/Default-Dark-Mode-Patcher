@@ -11,34 +11,28 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.zip.*;
-
 public class DefaultDarkModePatcher implements ClientModInitializer {
-
     public static final String MOD_ID = "default_dark_mode_patcher";
     private static final Logger LOGGER = LogManager.getLogger(MOD_ID);
-
     public static final String DEFAULT_PACK_FILENAME = "Default-Dark-Mode-1.21.6-2025.6.0.zip";
     public static final String DEFAULT_PACK_BAK_FILENAME = "Default-Dark-Mode-1.21.6-2025.6.0.zip.bak";
-    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-25w46a-2025.11.0.zip";
-
+    public static final String PATCHED_PACK_FILENAME = "Default-Dark-Mode-1.21.11-2026.1.0.zip";
     private static final String EXPECTED_SHA256 =
             "7DFF817B040D9942CBBE3228714075881736337E20713555ADCA62F546077741";
-
     private static final String UPDATED_PACK_MCMETA = """
         {
             "pack": {
                 "pack_format": 63,
                 "supported_formats": {
                     "min_inclusive": 63,
-                    "max_inclusive": 74
+                    "max_inclusive": 80
                 },
                 "min_format": 63,
-                "max_format": 74,
-                "description": "Welcome to the dark side!\\n\\u00a78by nebulr \\u2022 1.21.11 \\u2022 2025.11.0"
+                "max_format": 80,
+                "description": "Welcome to the dark side!\\n\\u00a78by nebulr \\u2022 1.21.11 \\u2022 2026.1.0"
             }
         }
         """;
-
     @Override
     public void onInitializeClient() {
         MinecraftClient client = MinecraftClient.getInstance();
@@ -48,18 +42,16 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             Path zipPath = resourcePacksDir.resolve(DEFAULT_PACK_FILENAME);
             Path bakPath = resourcePacksDir.resolve(DEFAULT_PACK_BAK_FILENAME);
             Path patchedPath = resourcePacksDir.resolve(PATCHED_PACK_FILENAME);
-
             if (!Files.exists(zipPath)) {
                 LOGGER.info("Default Dark Mode resource pack not found at {}. Skipping.", zipPath);
                 return;
             }
-
             new Thread(() -> {
                 boolean patched = patchWithVerification(zipPath, bakPath, patchedPath);
                 client.execute(() -> {
                     if (client.player != null) {
                         if (patched) {
-                            client.player.sendMessage(Text.literal("Default Dark Mode patched to 25w46a (1.21.11)."), false);
+                            client.player.sendMessage(Text.literal("Default Dark Mode patched to 1.21.11."), false);
                         } else {
                             client.player.sendMessage(Text.literal("Default Dark Mode patch skipped. See logs for details."), false);
                         }
@@ -68,13 +60,11 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             }).start();
         });
     }
-
     private boolean patchWithVerification(Path zipPath, Path bakPath, Path patchedPath) {
         try {
             boolean zipIsOriginal = verifySha256(zipPath, EXPECTED_SHA256);
             boolean bakExists = Files.exists(bakPath);
             boolean bakIsOriginal = bakExists && verifySha256(bakPath, EXPECTED_SHA256);
-
             if (zipIsOriginal) {
                 if (!bakExists) {
                     Files.copy(zipPath, bakPath, StandardCopyOption.COPY_ATTRIBUTES);
@@ -84,39 +74,31 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
                 if (ok) Files.deleteIfExists(zipPath);
                 return ok;
             }
-
             if (bakIsOriginal) {
                 boolean ok = patchFromSourceToZip(bakPath, patchedPath);
                 if (ok && Files.exists(zipPath)) Files.deleteIfExists(zipPath);
                 return ok;
             }
-
             LOGGER.warn("Neither .zip nor .bak match expected SHA-256. Aborting patch.");
             return false;
-
         } catch (Exception e) {
             LOGGER.error("Patch verification failed: ", e);
             return false;
         }
     }
-
     private boolean patchFromSourceToZip(Path sourceZip, Path targetZip) {
         Path tempDir = null;
         try {
             tempDir = Files.createTempDirectory("ddm_patch_");
             unzip(sourceZip.toFile(), tempDir.toFile());
-
             Path packMcmeta = tempDir.resolve("pack.mcmeta");
             Files.writeString(packMcmeta, UPDATED_PACK_MCMETA,
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
-
             injectSlotTexture(tempDir, "nautilus_armor.png");
             injectSlotTexture(tempDir, "spear.png");
             injectGuiTexture(tempDir, "nautilus.png");
-
             zipDirectory(tempDir.toFile(), targetZip.toFile());
             LOGGER.info("Repackaged patched resource pack as: {}", targetZip);
-
             return true;
         } catch (Exception e) {
             LOGGER.error("Error during patching: ", e);
@@ -129,7 +111,6 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             }
         }
     }
-
     private void injectSlotTexture(Path tempDir, String fileName) throws IOException {
         Path targetDir = tempDir.resolve("assets/minecraft/textures/gui/sprites/container/slot");
         Files.createDirectories(targetDir);
@@ -143,7 +124,6 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             }
         }
     }
-
     private void injectGuiTexture(Path tempDir, String fileName) throws IOException {
         Path targetDir = tempDir.resolve("assets/minecraft/textures/gui/container");
         Files.createDirectories(targetDir);
@@ -157,7 +137,6 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             }
         }
     }
-
     private static boolean verifySha256(Path file, String expectedUpperHex) {
         try {
             String actual = computeSHA256(file);
@@ -166,7 +145,6 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             return false;
         }
     }
-
     private static String computeSHA256(Path file) throws IOException, NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         try (FileInputStream fis = new FileInputStream(file.toFile())) {
@@ -181,7 +159,6 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
         for (byte b : hashBytes) sb.append(String.format("%02X", b));
         return sb.toString();
     }
-
     private void unzip(File zipFile, File targetDir) throws IOException {
         byte[] buffer = new byte[4096];
         try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
@@ -203,7 +180,6 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             }
         }
     }
-
     private File newFile(File destinationDir, ZipEntry zipEntry) throws IOException {
         File destFile = new File(destinationDir, zipEntry.getName());
         String destDirPath = destinationDir.getCanonicalPath();
@@ -213,14 +189,12 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
         }
         return destFile;
     }
-
     private void zipDirectory(File sourceDir, File zipFile) throws IOException {
         try (FileOutputStream fos = new FileOutputStream(zipFile);
              ZipOutputStream zos = new ZipOutputStream(fos)) {
             zipFileRecursive(sourceDir, sourceDir, zos);
         }
     }
-
     private void zipFileRecursive(File rootDir, File sourceFile, ZipOutputStream zos) throws IOException {
         if (sourceFile.isDirectory()) {
             File[] children = sourceFile.listFiles();
@@ -243,7 +217,6 @@ public class DefaultDarkModePatcher implements ClientModInitializer {
             }
         }
     }
-
     private void deleteDirectoryRecursively(File file) throws IOException {
         if (file.isDirectory()) {
             File[] children = file.listFiles();
