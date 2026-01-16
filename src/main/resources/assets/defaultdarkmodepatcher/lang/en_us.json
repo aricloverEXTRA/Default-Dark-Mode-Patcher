@@ -1,0 +1,13 @@
+{
+  "itemGroup.defaultdarkmodepatcher": "Example Mod Tab",
+  "block.defaultdarkmodepatcher.example_block": "Example Block",
+  "item.defaultdarkmodepatcher.example_item": "Example Item",
+
+  "defaultdarkmodepatcher.configuration.title": "Default Dark Mode Patcher Configs",
+  "defaultdarkmodepatcher.configuration.section.defaultdarkmodepatcher.common.toml": "Default Dark Mode Patcher Configs",
+  "defaultdarkmodepatcher.configuration.section.defaultdarkmodepatcher.common.toml.title": "Default Dark Mode Patcher Configs",
+  "defaultdarkmodepatcher.configuration.items": "Item List",
+  "defaultdarkmodepatcher.configuration.logDirtBlock": "Log Dirt Block",
+  "defaultdarkmodepatcher.configuration.magicNumberIntroduction": "Magic Number Text",
+  "defaultdarkmodepatcher.configuration.magicNumber": "Magic Number"
+}
